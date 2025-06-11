@@ -110,26 +110,10 @@ void print_matrix(bf16* hM, bf16* dM, int M, int N, bool rowmajor) {
 }
 
 int main() {
-  // int m = 6 * 11 * 128;
-  // int n = 6 * 12 * 128;
-  // int k = 512;
+  int m = 2048;
+  int n = 2048;
+  int k = 8192;
 
-  // m = k = 8;
-  // n = 16;
-
-  int m = 6 * 11 * 128;
-  int n = 3 * 12 * 256;
-  int k = 1024;
-
-  m = 6 * 11 * 128;
-  n = 6 * 12 * 128;
-  k = 640;
-
-  // m = 8 * 128;
-  // n = 8 * 256;
-  // k = 64;
-  //m = n = k = 8192;
-  //int max = 8192;
   int max = 16384;
   int numel = max * max;
 
@@ -167,10 +151,10 @@ int main() {
   run_pingpong(A, B, C, m, n, k);
 
   // Print a slab of matrix for sanity.
-  printf("A:\n"); print_matrix(hM, A, m, k, true);
-  printf("B:\n"); print_matrix(hM, B, k, n, false);
-  printf("C:\n"); print_matrix(hM, C, m, n, false);
-  printf("Cref:\n"); print_matrix(hM, Cref, m, n, false);
+  //printf("A:\n"); print_matrix(hM, A, m, k, true);
+  //printf("B:\n"); print_matrix(hM, B, k, n, false);
+  //printf("C:\n"); print_matrix(hM, C, m, n, false);
+  //printf("Cref:\n"); print_matrix(hM, Cref, m, n, false);
 
   // Test against cuBLAS reference.
   bf16* hostC = nullptr;
