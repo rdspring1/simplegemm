@@ -367,12 +367,12 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
   // Init barriers.
   if (tid == 0) {
     for (int i = 0; i < STAGES; i++) {
-      init_barrier(&prod[i], 0, 1);
+      init_barrier(&prod[i], 0, 2);
       init_barrier(&cons[i], 0, 1);
     }
     for (int i = 0; i < NUM_CONSUMERS; i++) {
-      init_barrier(&pingpong[0][i], 0, 1);
-      init_barrier(&pingpong[1][i], 0, 1);
+      init_barrier(&pingpong[0][i], 0, 128);
+      init_barrier(&pingpong[1][i], 0, 128);
     }
   }
   __syncthreads();
@@ -398,7 +398,10 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
           // Set expect bytes for TMA.
           expect_bytes(
               &prod[stage],
-              sizeof(bf16) * (BLOCK_M * BLOCK_K + BLOCK_K * BLOCK_N));
+              sizeof(bf16) * (BLOCK_K * BLOCK_N));
+          expect_bytes(
+              &prod[stage],
+              sizeof(bf16) * (BLOCK_M * BLOCK_K));
           // Load A.
           tma_load(
               &smem.A[stage * BLOCK_K * BLOCK_M],
@@ -433,10 +436,8 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
     }
 
     if (cons_id == 1) {
-      if (wg_tid == 0) {
-        arrive_barrier(&pingpong[0][1 - cons_id], 1);
-        arrive_barrier(&pingpong[1][1 - cons_id], 1);
-      }
+      arrive_barrier(&pingpong[0][1 - cons_id], 1);
+      arrive_barrier(&pingpong[1][1 - cons_id], 1);
       stage_advance(stage, phase, k_blocks);
     }
 
@@ -510,7 +511,7 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
       // Next k blocks handle by other pingpong consumer.
       stage_advance(stage, phase, k_blocks);
 
-      if (wg_tid == 0) {
+      if (cons_id != (1-cons_id)) {
         arrive_barrier(&pingpong[0][1 - cons_id], 1);
       }
 
@@ -562,7 +563,7 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
       }
 
       tma_wait_group<0>();
-      if (wg_tid == 0) {
+      if (cons_id != (1-cons_id)) {
         arrive_barrier(&pingpong[1][1 - cons_id], 1);
       }
       pingpong_phase ^= 1;
