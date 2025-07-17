@@ -344,6 +344,18 @@ __device__ static inline void stage_advance(int& stage, int& phase, int steps) {
   stage = (stage + steps) % STAGES;
 }
 
+__device__ constexpr int ceilDiv(int a, int b) {
+  return (a + b - 1) / b;
+}
+
+__device__ constexpr int64_t ceilDiv(int64_t a, int64_t b) {
+  return (a + b - 1) / b;
+}
+
+__device__ constexpr int64_t ceilDiv(int64_t a, int b) {
+  return ceilDiv(a, (int64_t)b);
+}
+
 __global__ __launch_bounds__(NUM_THREADS) void gemm(
     const __grid_constant__ CUtensorMap A,
     const __grid_constant__ CUtensorMap B,
@@ -381,6 +393,9 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
   auto n_blocks = cdiv(N, BLOCK_N);
   auto k_blocks = cdiv(K, BLOCK_K);
 
+  // m_blocks * n_blocks
+  // divide among grid, which is the number of SMs.
+
   if (wgid == 0) {
     // Producer warpgroup.
     setmaxnreg_dec<40>();
@@ -388,32 +403,40 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
     if (wg_tid == 0) {
       int phase = 0;
       int stage = 0;
-      for (auto bid = blockIdx.x; bid < m_blocks * n_blocks; bid += gridDim.x) {
-        auto m = (bid / 2) % m_blocks;
-        auto n = (bid / 2) / m_blocks * 2 + bid % 2;
+      // ceilDiv(all_blocks, 132), 132
+      // ceilDiv(ceilDiv(all_blocks, 132), 2), 2, 132
 
-        for (int k = 0; k < k_blocks; k++) {
-          // Wait for consumer.
-          wait_barrier(&cons[stage], phase);
-          // Set expect bytes for TMA.
-          expect_bytes(
-              &prod[stage],
-              sizeof(bf16) * (BLOCK_M * BLOCK_K + BLOCK_K * BLOCK_N));
-          // Load A.
-          tma_load(
-              &smem.A[stage * BLOCK_K * BLOCK_M],
-              &A,
-              &prod[stage],
-              k * BLOCK_K,
-              m * BLOCK_M);
-          // Load B.
-          tma_load(
-              &smem.B[stage * BLOCK_K * BLOCK_N],
-              &B,
-              &prod[stage],
-              k * BLOCK_K,
-              n * BLOCK_N);
-          stage_next(stage, phase);
+      for (auto o = 0; o < ceilDiv(ceilDiv(m_blocks * n_blocks, gridDim.x), 2); ++o) {
+        for (auto i = 0; i < 2; ++i) {
+	  auto bid = o * (132 * 2) + i * 132 + blockIdx.x;
+          //auto m = (bid / 2) % m_blocks;
+          //auto n = (bid / 2) / m_blocks * 2 + bid % 2;
+          auto m = bid % m_blocks;
+          auto n = bid / m_blocks;
+
+          for (int k = 0; k < k_blocks; k++) {
+            // Wait for consumer.
+            wait_barrier(&cons[stage], phase);
+            // Set expect bytes for TMA.
+            expect_bytes(
+                &prod[stage],
+                sizeof(bf16) * (BLOCK_M * BLOCK_K + BLOCK_K * BLOCK_N));
+            // Load A.
+            tma_load(
+                &smem.A[stage * BLOCK_K * BLOCK_M],
+                &A,
+                &prod[stage],
+                k * BLOCK_K,
+                m * BLOCK_M);
+            // Load B.
+            tma_load(
+                &smem.B[stage * BLOCK_K * BLOCK_N],
+                &B,
+                &prod[stage],
+                k * BLOCK_K,
+                n * BLOCK_N);
+            stage_next(stage, phase);
+	  }
         }
       }
     }
@@ -440,10 +463,12 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
       stage_advance(stage, phase, k_blocks);
     }
 
-    for (auto bid = blockIdx.x + gridDim.x * cons_id; bid < m_blocks * n_blocks;
-         bid += (gridDim.x * NUM_CONSUMERS)) {
-      auto m = (bid / 2) % m_blocks;
-      auto n = (bid / 2) / m_blocks * 2 + bid % 2;
+    for (auto o = 0; o < ceilDiv(ceilDiv(m_blocks * n_blocks, gridDim.x), 2); ++o) {
+      auto bid = o * (132 * 2) + cons_id * 132 + blockIdx.x;
+      //auto m = (bid / 2) % m_blocks;
+      //auto n = (bid / 2) / m_blocks * 2 + bid % 2;
+      auto m = bid % m_blocks;
+      auto n = bid / m_blocks;
 
       float acc[WG_M / INST_M][8][8];
       memset(acc, 0, sizeof(acc));
