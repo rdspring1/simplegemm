@@ -411,8 +411,8 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
 	  auto bid = o * (132 * 2) + i * 132 + blockIdx.x;
           //auto m = (bid / 2) % m_blocks;
           //auto n = (bid / 2) / m_blocks * 2 + bid % 2;
-          auto m = bid % m_blocks;
-          auto n = bid / m_blocks;
+          auto m = bid / m_blocks;
+          auto n = bid % m_blocks;
 
           for (int k = 0; k < k_blocks; k++) {
             // Wait for consumer.
@@ -467,8 +467,8 @@ __global__ __launch_bounds__(NUM_THREADS) void gemm(
       auto bid = o * (132 * 2) + cons_id * 132 + blockIdx.x;
       //auto m = (bid / 2) % m_blocks;
       //auto n = (bid / 2) / m_blocks * 2 + bid % 2;
-      auto m = bid % m_blocks;
-      auto n = bid / m_blocks;
+      auto m = bid / m_blocks;
+      auto n = bid % m_blocks;
 
       float acc[WG_M / INST_M][8][8];
       memset(acc, 0, sizeof(acc));
